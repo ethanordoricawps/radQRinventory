@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Sequence
 import requests
 
 from .config import settings
-from .part_catalog import find_catalog_entry
+from .part_catalog import find_catalog_entry, sort_in_catalog_order
 from .store import (
     ActionResult,
     InventoryStore,
@@ -183,7 +183,7 @@ class AirtableStore(InventoryStore):
 
     def list_parts(self) -> Sequence[Part]:
         parts, _, _ = self._load_parts()
-        return parts
+        return sort_in_catalog_order(parts, get_sku=lambda part: part.sku, get_name=lambda part: part.name)
 
     def get_part(self, sku: str) -> Part:
         _, _, sku_to_part = self._load_parts()

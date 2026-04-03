@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterator, Sequence
 
 from .config import settings
-from .part_catalog import catalog_sort_key
+from .part_catalog import sort_in_catalog_order
 from .store import (
     ActionResult,
     InventoryStore,
@@ -153,8 +153,7 @@ class MockStore(InventoryStore):
                 + "GROUP BY p.id, p.sku, p.name, p.container_label, p.starting_qty, p.reorder_level "
             ).fetchall()
         parts = [self._part_row_to_model(row) for row in rows]
-        parts.sort(key=lambda part: catalog_sort_key(part.sku, part.name))
-        return parts
+        return sort_in_catalog_order(parts, get_sku=lambda part: part.sku, get_name=lambda part: part.name)
 
     def get_part(self, sku: str) -> Part:
         with self._connect() as conn:

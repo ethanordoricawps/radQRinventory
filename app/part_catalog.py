@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import csv
 import re
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Sequence, TypeVar
 
 
 @dataclass(frozen=True)
@@ -11,7 +14,7 @@ class CatalogEntry:
     airtable_names: tuple[str, ...]
 
 
-TARGET_PARTS: tuple[CatalogEntry, ...] = (
+DEFAULT_TARGET_PARTS: tuple[CatalogEntry, ...] = (
     CatalogEntry('RAD-IP67-JBOX', 'IP67 Waterproof Junction Box (11.8x7.9x6.3)', ('IP67 Waterproof Junction Box (11.8x7.9x6.3)', 'IP67 Waterproof Junction Box (check if 7.1”!)')),
     CatalogEntry('RAD-CWT5015-RTU', '4G RTU Remote Terminal Unit CWT5015', ('4G RTU Remote Terminal Unit CWT5015', 'CWT5015 4G RTU Remote Terminal Unit CWT5015')),
     CatalogEntry('RAD-MP3-PLAYER', 'MP3 Player', ('MP3 Player',)),
@@ -58,6 +61,9 @@ TARGET_PARTS: tuple[CatalogEntry, ...] = (
 )
 
 
+T = TypeVar('T')
+
+
 def normalize_part_name(value: str | None) -> str:
     text = (value or '').strip().lower()
     text = text.replace('&', 'and')
@@ -68,22 +74,133 @@ def normalize_part_name(value: str | None) -> str:
     return text
 
 
-_CATALOG_LOOKUP = {}
-for entry in TARGET_PARTS:
+def _catalog_root() -> Path:
+    return Path(__file__).resolve().parents[1]
+
+
+def _catalog_order_csv_paths() -> tuple[Path, ...]:
+    root = _catalog_root()
+    return (
+        root / 'airtable_import' / 'inventory_mapping.csv',
+        root / 'airtable_import' / 'bom_line_items_mapping.csv',
+        root / 'airtable_import' / 'parts_import.csv',
+    )
+
+
+def _split_aliases(value: str | None) -> tuple[str, ...]:
+    text = (value or '').strip()
+    if not text:
+        return ()
+    parts = re.split(r'[|\r\n]+', text)
+    return tuple(part.strip() for part in parts if part and part.strip())
+
+
+def _dedupe_preserve_order(values: list[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in values:
+        normalized = normalize_part_name(value)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        ordered.append(value.strip())
+    return tuple(ordered)
+
+
+def _load_catalog_entries_from_csv() -> tuple[CatalogEntry, ...]:
+    for path in _catalog_order_csv_paths():
+        if not path.exists():
+            continue
+        with path.open('r', encoding='utf-8-sig', newline='') as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = reader.fieldnames or []
+            if not fieldnames:
+                continue
+
+            def first_present(*names: str) -> str | None:
+                return next((name for name in names if name in fieldnames), None)
+
+            sku_field = first_present('App SKU', 'SKU', 'sku')
+            display_field = first_present('App Display Name', 'Display Name', 'Line Item Name', 'Inventory Name Used', 'Part')
+            inventory_name_field = first_present('Inventory Name Used', 'Line Item Name', 'Part')
+            alternate_field = first_present('Accepted Alternate Match', 'Accepted Alternate Matches', 'Alternate Match', 'Alternate Matches')
+            if not sku_field or not display_field:
+                continue
+
+            entries: list[CatalogEntry] = []
+            for row in reader:
+                sku = (row.get(sku_field) or '').strip()
+                if not sku:
+                    continue
+                display_name = (row.get(display_field) or '').strip()
+                inventory_name = (row.get(inventory_name_field) or '').strip() if inventory_name_field else ''
+                if not display_name:
+                    display_name = inventory_name or sku
+                alias_candidates: list[str] = [display_name]
+                if inventory_name:
+                    alias_candidates.append(inventory_name)
+                if alternate_field:
+                    alias_candidates.extend(_split_aliases(row.get(alternate_field)))
+                entries.append(
+                    CatalogEntry(
+                        sku=sku,
+                        display_name=display_name,
+                        airtable_names=_dedupe_preserve_order(alias_candidates),
+                    )
+                )
+            if entries:
+                return tuple(entries)
+    return ()
+
+
+TARGET_PARTS: tuple[CatalogEntry, ...] = _load_catalog_entries_from_csv() or DEFAULT_TARGET_PARTS
+
+
+_CATALOG_LOOKUP: dict[str, CatalogEntry] = {}
+CATALOG_NAME_ORDER: dict[str, int] = {}
+for index, entry in enumerate(TARGET_PARTS):
+    CATALOG_NAME_ORDER[normalize_part_name(entry.display_name)] = index
     _CATALOG_LOOKUP[normalize_part_name(entry.display_name)] = entry
     for alias in entry.airtable_names:
-        _CATALOG_LOOKUP[normalize_part_name(alias)] = entry
+        normalized_alias = normalize_part_name(alias)
+        CATALOG_NAME_ORDER[normalized_alias] = index
+        _CATALOG_LOOKUP[normalized_alias] = entry
+
+
+CATALOG_ORDER = {entry.sku: index for index, entry in enumerate(TARGET_PARTS)}
 
 
 def find_catalog_entry(raw_name: str | None) -> CatalogEntry | None:
     return _CATALOG_LOOKUP.get(normalize_part_name(raw_name))
 
 
-CATALOG_ORDER = {entry.sku: index for index, entry in enumerate(TARGET_PARTS)}
+def catalog_position(sku: str, fallback_name: str = '') -> int:
+    if sku in CATALOG_ORDER:
+        return CATALOG_ORDER[sku]
+    normalized_name = normalize_part_name(fallback_name)
+    if normalized_name in CATALOG_NAME_ORDER:
+        return CATALOG_NAME_ORDER[normalized_name]
+    return len(CATALOG_ORDER)
 
 
 def catalog_sort_key(sku: str, fallback_name: str = '') -> tuple[int, str]:
-    return (CATALOG_ORDER.get(sku, len(CATALOG_ORDER)), (fallback_name or '').lower())
+    return (catalog_position(sku, fallback_name), (fallback_name or '').lower())
+
+
+def sort_in_catalog_order(items: Sequence[T], *, get_sku, get_name=None) -> list[T]:
+    indexed_items = list(enumerate(items))
+
+    def sort_key(pair: tuple[int, T]) -> tuple[int, int]:
+        original_index, item = pair
+        sku = get_sku(item)
+        name = get_name(item) if get_name else ''
+        position = catalog_position(sku, name)
+        if position >= len(CATALOG_ORDER):
+            position = len(CATALOG_ORDER) + original_index
+        return (position, original_index)
+
+    indexed_items.sort(key=sort_key)
+    return [item for _, item in indexed_items]
 
 
 CATALOG_BY_SKU = {entry.sku: entry for entry in TARGET_PARTS}
