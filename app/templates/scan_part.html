@@ -34,7 +34,7 @@
 
     <label>
       Purchase Order
-      <select name="purchase_order_id">
+      <select name="purchase_order_id" style="min-height: 3.2rem; padding: 0.75rem; font-size: 1rem;">
         <option value="">None</option>
         {% for po in purchase_orders %}
         <option value="{{ po.id }}" {% if purchase_order_id == po.id %}selected{% endif %}>
