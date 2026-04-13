@@ -33,8 +33,6 @@
           <th>On hand</th>
           <th>Reorder</th>
           <th>Scan page</th>
-          <th>Quick add</th>
-          <th>Quick subtract</th>
         </tr>
       </thead>
       <tbody>
@@ -46,8 +44,6 @@
           <td>{{ part.on_hand }}</td>
           <td>{{ part.reorder_level }}</td>
           <td><a class="pill secondary" href="/scan/part/{{ part.sku }}">Open scan page</a></td>
-          <td><a class="pill" href="/scan/part/{{ part.sku }}?action=add">Add</a></td>
-          <td><a class="pill danger" href="/scan/part/{{ part.sku }}?action=subtract">Subtract</a></td>
         </tr>
         {% endfor %}
       </tbody>
