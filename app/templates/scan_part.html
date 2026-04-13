@@ -17,17 +17,89 @@
   {% endif %}
 
   <style>
-    .mode-toggle-row { display:flex; align-items:center; gap:0.75rem; margin:0.25rem 0 0.5rem; }
-    .mode-toggle { appearance:none; width:3.25rem; height:1.9rem; background:#cbd5e1; border-radius:999px; position:relative; cursor:pointer; transition:background 0.2s ease; }
+    .mode-toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.25rem 0 0.5rem;
+      flex-wrap: nowrap;
+    }
+    .mode-toggle {
+      -webkit-appearance: none;
+      appearance: none;
+      box-sizing: border-box;
+      flex: 0 0 auto;
+      width: 3.25rem;
+      height: 1.9rem;
+      min-width: 3.25rem;
+      min-height: 1.9rem;
+      margin: 0;
+      border: 0;
+      background: #cbd5e1;
+      border-radius: 999px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s ease;
+      vertical-align: middle;
+    }
     .mode-toggle:checked { background:#1f6feb; }
-    .mode-toggle::after { content:''; position:absolute; top:0.2rem; left:0.2rem; width:1.5rem; height:1.5rem; border-radius:999px; background:#fff; transition:transform 0.2s ease; box-shadow:0 1px 3px rgba(0,0,0,0.2); }
+    .mode-toggle::after {
+      content:'';
+      position:absolute;
+      top:0.2rem;
+      left:0.2rem;
+      width:1.5rem;
+      height:1.5rem;
+      border-radius:999px;
+      background:#fff;
+      transition:transform 0.2s ease;
+      box-shadow:0 1px 3px rgba(0,0,0,0.2);
+    }
     .mode-toggle:checked::after { transform:translateX(1.35rem); }
+    .mode-toggle-label {
+      margin: 0;
+      font-weight: 700;
+      line-height: 1.25;
+      flex: 1 1 auto;
+    }
     .mode-panel { display:grid; gap:0.9rem; }
     .receive-panel[hidden], .standard-panel[hidden] { display:none !important; }
     .inline-help { font-size:0.92rem; color:var(--muted); margin-top:-0.2rem; }
     .preview-box { border:1px solid var(--line); background:#f8fafc; border-radius:12px; padding:0.9rem 1rem; }
     .preview-box strong { display:block; margin-bottom:0.25rem; }
     .receive-warning { color:#b45309; background:#fffbeb; border:1px solid #f59e0b; border-radius:10px; padding:0.8rem 0.9rem; }
+    .po-dependent-block {
+      display: grid;
+      gap: 0.9rem;
+      transition: opacity 0.2s ease, filter 0.2s ease;
+    }
+    .po-dependent-block.is-disabled {
+      opacity: 0.45;
+      filter: grayscale(0.1);
+      pointer-events: none;
+    }
+    @media (max-width: 520px) {
+      .mode-toggle-row {
+        align-items: center;
+        gap: 0.6rem;
+      }
+      .mode-toggle {
+        width: 3rem;
+        height: 1.75rem;
+        min-width: 3rem;
+        min-height: 1.75rem;
+      }
+      .mode-toggle::after {
+        top: 0.16rem;
+        left: 0.16rem;
+        width: 1.43rem;
+        height: 1.43rem;
+      }
+      .mode-toggle:checked::after { transform: translateX(1.25rem); }
+      .mode-toggle-label {
+        font-size: 0.98rem;
+      }
+    }
   </style>
 
   <form method="post" class="stack" id="scan-form">
@@ -35,7 +107,7 @@
 
     <div class="mode-toggle-row">
       <input class="mode-toggle" type="checkbox" id="receive_mode_toggle" {% if receive_mode %}checked{% endif %}>
-      <label for="receive_mode_toggle" style="margin:0; font-weight:700;">Receiving from Purchase Order?</label>
+      <label for="receive_mode_toggle" class="mode-toggle-label">Receiving from Purchase Order?</label>
     </div>
 
     <div id="standard-panel" class="mode-panel standard-panel" {% if receive_mode %}hidden{% endif %}>
@@ -73,34 +145,36 @@
         </select>
       </label>
 
-      <label>
-        PO Units Received
-        <input type="number" name="po_units" id="po_units_input" min="1" value="{{ po_units }}">
-      </label>
-      <p class="inline-help">Enter PO units, not final inventory units. Example: if 1 pack contains 30 parts, enter 1 here.</p>
-
-      <div class="preview-box" id="conversion_preview">
-        <strong>Inventory Change Preview</strong>
-        <span id="conversion_preview_text">—</span>
-      </div>
-
       <div id="po_required_message" class="receive-warning" {% if purchase_order_id %}hidden{% endif %}>
         Select a Purchase Order to continue.
       </div>
 
-      <label>
-        Operator initials (optional)
-        <input type="text" name="operator" id="operator_input_receive" placeholder="RB" value="{{ operator }}">
-      </label>
+      <div id="po_dependent_block" class="po-dependent-block {% if not purchase_order_id %}is-disabled{% endif %}">
+        <label>
+          PO Units Received
+          <input type="number" name="po_units" id="po_units_input" min="1" value="{{ po_units }}">
+        </label>
+        <p class="inline-help">Enter PO units, not final inventory units. Example: if 1 pack contains 30 parts, enter 1 here.</p>
 
-      <label>
-        Note (optional)
-        <textarea name="note" id="note_input_receive" rows="3" placeholder="Box received, partial shipment, damaged packaging, etc.">{{ note }}</textarea>
-      </label>
+        <div class="preview-box" id="conversion_preview">
+          <strong>Inventory Change Preview</strong>
+          <span id="conversion_preview_text">—</span>
+        </div>
 
-      <div class="scan-choice-buttons">
-        <button type="submit" id="receive_button" name="action" value="receive" class="{% if preferred_action == 'receive' %}selected-action{% endif %}">Receive</button>
-        <button type="submit" id="undo_receive_button" name="action" value="undo_receive" class="danger {% if preferred_action == 'undo_receive' %}selected-action{% endif %}">Undo Receive</button>
+        <label>
+          Operator initials (optional)
+          <input type="text" name="operator" id="operator_input_receive" placeholder="RB" value="{{ operator }}">
+        </label>
+
+        <label>
+          Note (optional)
+          <textarea name="note" id="note_input_receive" rows="3" placeholder="Box received, partial shipment, damaged packaging, etc.">{{ note }}</textarea>
+        </label>
+
+        <div class="scan-choice-buttons">
+          <button type="submit" id="receive_button" name="action" value="receive" class="{% if preferred_action == 'receive' %}selected-action{% endif %}">Receive</button>
+          <button type="submit" id="undo_receive_button" name="action" value="undo_receive" class="danger {% if preferred_action == 'undo_receive' %}selected-action{% endif %}">Undo Receive</button>
+        </div>
       </div>
     </div>
   </form>
@@ -122,6 +196,7 @@
     const receiveButton = document.getElementById('receive_button');
     const undoButton = document.getElementById('undo_receive_button');
     const poRequiredMessage = document.getElementById('po_required_message');
+    const poDependentBlock = document.getElementById('po_dependent_block');
     const previewText = document.getElementById('conversion_preview_text');
     const partsPerPoUnit = {{ part.parts_per_po_unit or 1 }};
 
@@ -138,17 +213,20 @@
       receivePanel.hidden = !receiveMode;
       quantityInput.disabled = receiveMode;
       quantityInput.required = !receiveMode;
-      poUnitsInput.disabled = !receiveMode;
-      poUnitsInput.required = receiveMode;
       poSelect.disabled = !receiveMode;
       operatorStandard.disabled = receiveMode;
       noteStandard.disabled = receiveMode;
-      operatorReceive.disabled = !receiveMode;
-      noteReceive.disabled = !receiveMode;
+
       const hasPO = !!poSelect.value;
-      receiveButton.disabled = receiveMode && !hasPO;
-      undoButton.disabled = receiveMode && !hasPO;
+      const enableReceiveFields = receiveMode && hasPO;
+      poUnitsInput.disabled = !enableReceiveFields;
+      poUnitsInput.required = enableReceiveFields;
+      operatorReceive.disabled = !enableReceiveFields;
+      noteReceive.disabled = !enableReceiveFields;
+      receiveButton.disabled = !enableReceiveFields;
+      undoButton.disabled = !enableReceiveFields;
       poRequiredMessage.hidden = !receiveMode || hasPO;
+      poDependentBlock.classList.toggle('is-disabled', receiveMode && !hasPO);
       updatePreview();
     }
 
