@@ -19,6 +19,15 @@ def _as_bool(value: str | None, default: bool = False) -> bool:
         return default
     return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
+def _app_variant() -> str:
+    return os.getenv("APP_VARIANT", "live").strip().lower()
+
+def _header_prefix() -> str:
+    return "QA Version - " if _app_variant() == "qa" else ""
+
+def _header_bg_color() -> str:
+    # pick whatever QA color you like
+    return "#7c3aed" if _app_variant() == "qa" else "#0f172a"
 
 @dataclass(frozen=True)
 class Settings:
