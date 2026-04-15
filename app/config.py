@@ -27,7 +27,7 @@ def _header_prefix() -> str:
 
 def _header_bg_color() -> str:
     # pick whatever QA color you like
-    return "#7c3aed" if _app_variant() == "qa" else "#0f172a"
+    return "#ffa500" if _app_variant() == "qa" else "#0f172a"
 
 @dataclass(frozen=True)
 class Settings:
