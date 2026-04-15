@@ -29,6 +29,10 @@ class Settings:
     allow_negative_stock: bool = _as_bool(os.getenv('ALLOW_NEGATIVE_STOCK'), False)
     enable_kits: bool = _as_bool(os.getenv('ENABLE_KITS'), False)
 
+    app_variant: str = _app_variant()
+    header_prefix: str = _header_prefix()
+    header_bg_color: str = _header_bg_color()
+
     project_root: Path = PROJECT_ROOT
     mock_db_path: Path = Path(os.getenv('MOCK_DB_PATH', str(project_root / 'demo_data' / 'radbox_inventory.db')))
     seed_file: Path = Path(os.getenv('SEED_FILE', str(project_root / 'demo_data' / 'seed.json')))
