@@ -372,16 +372,18 @@ class MockStore(InventoryStore):
             raise ValidationError("Whole RAD Box Unit is not configured. Add values to Parts per RAD Unit first.")
 
         multiplier = 1 if action == "add" else -1
-        if not self.allow_negative_stock and action == "subtract":
-            shortages = [comp for comp in whole.components if comp.on_hand - comp.qty_per_kit < 0]
-            if shortages:
-                details = "; ".join(f"{comp.part_name}: need {comp.qty_per_kit}, have {comp.on_hand}" for comp in shortages)
-                raise ValidationError(f"Whole RAD Box subtract blocked because stock would go negative. {details}")
 
         batch_id = str(uuid.uuid4())
         now = self._now()
+        zero_adjusted_parts: list[str] = []
         with self._connect() as conn:
             for comp in whole.components:
+                applied_quantity = comp.qty_per_kit
+                applied_delta = multiplier * comp.qty_per_kit
+                if action == "subtract" and comp.on_hand < comp.qty_per_kit:
+                    applied_quantity = 0
+                    applied_delta = 0
+                    zero_adjusted_parts.append(comp.part_name)
                 conn.execute(
                     """
                     INSERT INTO transactions (created_at, sku, action, quantity, delta, batch_id, operator, note, source)
@@ -391,8 +393,8 @@ class MockStore(InventoryStore):
                         now,
                         comp.sku,
                         action,
-                        comp.qty_per_kit,
-                        multiplier * comp.qty_per_kit,
+                        applied_quantity,
+                        applied_delta,
                         batch_id,
                         operator.strip(),
                         note.strip(),
@@ -400,9 +402,12 @@ class MockStore(InventoryStore):
                     ),
                 )
         touched_parts = [self.get_part(comp.sku) for comp in whole.components]
+        message = f"Applied {action} for {whole.name}. Updated {len(touched_parts)} parts."
+        if zero_adjusted_parts:
+            message += " Parts with insufficient stock were recorded with a 0 change: " + "; ".join(zero_adjusted_parts) + "."
         return ActionResult(
             ok=True,
-            message=f"Applied {action} for {whole.name}. Updated {len(touched_parts)} parts.",
+            message=message,
             batch_id=batch_id,
             touched_parts=touched_parts,
             transactions_created=len(touched_parts),
