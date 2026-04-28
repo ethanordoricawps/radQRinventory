@@ -836,14 +836,6 @@ class AirtableStore(InventoryStore):
             raise ValidationError('Whole RAD Box Unit is not configured. Add values to Parts per RAD Unit first.')
 
         _, sku_to_id, _ = self._load_parts()
-        if not self.allow_negative_stock and action == 'subtract':
-            shortages = [comp for comp in whole.components if comp.on_hand - comp.qty_per_kit < 0]
-            if shortages:
-                details = '; '.join(
-                    f'{comp.part_name}: need {comp.qty_per_kit}, have {comp.on_hand}' for comp in shortages
-                )
-                raise ValidationError(f'Whole RAD Box Unit subtract blocked because stock would go negative. {details}')
-
         multiplier = 1 if action == 'add' else -1
         batch_id = str(uuid.uuid4())
         scanned_at = self._now()
@@ -855,11 +847,20 @@ class AirtableStore(InventoryStore):
             raise ValidationError('No Airtable count field is configured. Set FIELD_PART_ON_HAND or FIELD_PART_STARTING_QTY.')
 
         target_table = self._resolved_parts_table or settings.airtable_parts_table
+        zero_adjusted_parts: list[str] = []
         for comp in whole.components:
             record_id = sku_to_id.get(comp.sku)
             if not record_id:
                 raise ValidationError(f"Part '{comp.sku}' is missing from the Airtable parts table.")
-            new_qty = comp.on_hand + (multiplier * comp.qty_per_kit)
+
+            applied_quantity = comp.qty_per_kit
+            applied_delta = multiplier * comp.qty_per_kit
+            if action == 'subtract' and comp.on_hand < comp.qty_per_kit:
+                applied_quantity = 0
+                applied_delta = 0
+                zero_adjusted_parts.append(comp.part_name)
+
+            new_qty = comp.on_hand + applied_delta
             self._update_record(target_table, record_id, {count_field: new_qty})
             touched_parts.append(
                 Part(
@@ -876,8 +877,8 @@ class AirtableStore(InventoryStore):
                 part_record_id=record_id,
                 sku=comp.sku,
                 action=action,
-                quantity=comp.qty_per_kit,
-                delta=multiplier * comp.qty_per_kit,
+                quantity=applied_quantity,
+                delta=applied_delta,
                 batch_id=batch_id,
                 operator=operator,
                 note=note,
@@ -890,6 +891,8 @@ class AirtableStore(InventoryStore):
                 tx_count += 1
 
         message = f'Applied {action} for {whole.name}. Updated {len(touched_parts)} parts.'
+        if zero_adjusted_parts:
+            message += ' Parts with insufficient stock were recorded with a 0 change: ' + '; '.join(zero_adjusted_parts) + '.'
         if log_failures:
             message += ' Inventory counts were saved, but some transaction log entries were skipped: ' + '; '.join(log_failures)
         elif self._transactions_table_configured():
